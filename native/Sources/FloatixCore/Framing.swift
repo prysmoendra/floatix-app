@@ -18,7 +18,7 @@ public struct FrameDecoder {
 
     public init(maxLength: Int = 64 * 1024 * 1024) { self.maxLength = maxLength }
 
-    /// Mengembalikan payload lengkap; sisa (frame terpotong) disimpan untuk panggilan berikutnya.
+    /// Mengembalikan payload lengkap; header terlalu besar setelah frame valid ditahan dan dilempar di panggilan berikutnya (lalu terus dilempar).
     public mutating func append(_ chunk: Data) throws -> [Data] {
         buffer.append(chunk)
         var out: [Data] = []
@@ -27,7 +27,10 @@ public struct FrameDecoder {
             let raw = UInt32(buffer[b]) | UInt32(buffer[b + 1]) << 8
                 | UInt32(buffer[b + 2]) << 16 | UInt32(buffer[b + 3]) << 24
             let len = Int(raw)
-            if len > maxLength { throw FloatixError.frameTooLarge(len) }
+            if len > maxLength {
+                if out.isEmpty { throw FloatixError.frameTooLarge(len) }
+                break
+            }
             guard buffer.count >= 4 + len else { break }
             out.append(Data(buffer[(b + 4)..<(b + 4 + len)]))
             buffer = Data(buffer.dropFirst(4 + len))
