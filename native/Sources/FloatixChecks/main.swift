@@ -38,6 +38,25 @@ catch { check(error as? FloatixError == .frameTooLarge(9), "decode: header besar
 do { _ = try mix.append(Data([1])); check(false, "decode: lempar ulang") }
 catch { check(error as? FloatixError == .frameTooLarge(9), "decode: lempar ulang") }
 
+let open = try! decodeInbound(Data(#"{"type":"open","url":"https://youtu.be/x","time":-3}"#.utf8))
+check(open == .open(OpenRequest(url: URL(string: "https://youtu.be/x")!, time: 0, aspect: 16.0/9)), "open: default + clamp time")
+check(try! decodeInbound(Data(#"{"type":"open","url":"https://a.b","time":1,"aspect":99}"#.utf8))
+      == .open(OpenRequest(url: URL(string: "https://a.b")!, time: 1, aspect: 4)), "open: clamp aspect")
+check(try! decodeInbound(Data(#"{"type":"close"}"#.utf8)) == .close, "close")
+check(try! decodeInbound(Data(#"{"type":"togglePlay"}"#.utf8)) == .togglePlay, "togglePlay")
+check((try? decodeInbound(Data(#"{"type":"open","url":"file:///etc/passwd","time":0}"#.utf8))) == nil, "tolak file://")
+check((try? decodeInbound(Data(#"{"type":"open","time":0}"#.utf8))) == nil, "tolak url hilang")
+check((try? decodeInbound(Data(#"{"type":"zzz"}"#.utf8))) == nil, "tolak type tak dikenal")
+check((try? decodeInbound(Data("{".utf8))) == nil, "tolak JSON rusak")
+let out = String(decoding: encodeOutbound(.closed(time: 12.5)), as: UTF8.self)
+check(out.contains(#""type":"closed""#) && out.contains("12.5"), "encode closed")
+check(String(decoding: encodeOutbound(.ready), as: UTF8.self) == #"{"type":"ready"}"#, "encode ready")
+check(String(decoding: encodeOutbound(.error("a\"b")), as: UTF8.self).contains(#""message":"a\"b""#), "encode error escape")
+check(isolatorScript(startTime: 42.5).contains("42.5"), "isolator memuat waktu mulai")
+check(isolatorScript(startTime: -1).contains("const start = 0.0;") && isolatorScript(startTime: .nan).contains("const start = 0.0;"), "isolator: negatif/NaN jadi 0")
+check(initialFrame(visible: CGRect(x: 0, y: 0, width: 1440, height: 900), aspect: 16.0/9)
+      == CGRect(x: 936, y: 24, width: 480, height: 270), "frame awal kanan bawah")
+
 // --- checks above this line ---
 if failures > 0 { print("\(failures) CHECK GAGAL"); exit(1) }
 print("ALL CHECKS PASSED")
