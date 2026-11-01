@@ -13,6 +13,7 @@ final class StdioBridge {
     }
 
     func start() {
+        signal(SIGPIPE, SIG_IGN)
         Thread.detachNewThread { [self] in
             var decoder = FrameDecoder()
             while true {
@@ -46,6 +47,21 @@ final class StdioBridge {
         let frame = encodeFrame(encodeOutbound(m))
         guard frame.count - 4 <= 1_048_576 else { log("frame keluar > 1 MB, dibuang"); return }
         lock.lock(); defer { lock.unlock() }
-        FileHandle.standardOutput.write(frame)
+        if !writeAll(frame) {
+            log("tulis stdout gagal, keluar")
+            DispatchQueue.main.async { self.onEOF() }
+        }
+    }
+
+    private func writeAll(_ data: Data) -> Bool {
+        data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) -> Bool in
+            var off = 0
+            while off < buf.count {
+                let n = write(1, buf.baseAddress! + off, buf.count - off)
+                if n < 0 { if errno == EINTR { continue }; return false }
+                off += n
+            }
+            return true
+        }
     }
 }
