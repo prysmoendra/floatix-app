@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Floatix",
+  "version": "0.1.0",
+  "description": "Kirim video tab aktif ke panel melayang Floatix.",
+  "permissions": ["nativeMessaging", "activeTab", "scripting"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Floatix" },
+  "commands": {
+    "_execute_action": { "suggested_key": { "default": "Alt+Shift+P", "mac": "Alt+Shift+P" } }
+  }
+}
