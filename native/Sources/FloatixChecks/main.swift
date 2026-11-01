@@ -57,6 +57,14 @@ check(isolatorScript(startTime: -1).contains("const start = 0.0;") && isolatorSc
 check(initialFrame(visible: CGRect(x: 0, y: 0, width: 1440, height: 900), aspect: 16.0/9)
       == CGRect(x: 936, y: 24, width: 480, height: 270), "frame awal kanan bawah")
 
+let yt = URL(string: "https://www.youtube.com/watch?v=B452TVVco2Q&list=RDB452TVVco2Q&start_radio=1")!
+check(playbackURL(yt, time: 42.7) == URL(string: "https://www.youtube.com/watch?v=B452TVVco2Q&t=42s")!, "youtube: buang list, tambah t")
+check(playbackURL(URL(string: "https://youtu.be/abc?si=x")!, time: 5) == URL(string: "https://www.youtube.com/watch?v=abc&t=5s")!, "youtu.be dinormalkan")
+check(playbackURL(URL(string: "https://www.youtube.com/watch?v=abc")!, time: 0) == URL(string: "https://www.youtube.com/watch?v=abc")!, "youtube t=0 tanpa param t")
+check(playbackURL(URL(string: "https://vimeo.com/1?x=1")!, time: 9) == URL(string: "https://vimeo.com/1?x=1")!, "non-youtube tidak diubah")
+check(isolatorScript(startTime: 1).contains("ad-showing"), "isolator: tunda seek selama iklan youtube")
+check(isolatorScript(startTime: 1).contains("['overflow', 'visible']"), "isolator: induk video tidak memotong video fixed")
+
 // --- checks above this line ---
 if failures > 0 { print("\(failures) CHECK GAGAL"); exit(1) }
 print("ALL CHECKS PASSED")

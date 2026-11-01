@@ -65,32 +65,29 @@ final class PlayerPanel: NSPanel {
         webView.autoresizingMask = [.width, .height]
         root.addSubview(webView)
 
+        // Lapisan seret di atas video: panel bisa digeser dari mana saja (halaman tidak perlu diklik).
+        let dragAll = DragView(frame: root.bounds)
+        dragAll.autoresizingMask = [.width, .height]
+        root.addSubview(dragAll)
+
         hud.frame = NSRect(x: 0, y: root.bounds.height - 28, width: root.bounds.width, height: 28)
         hud.autoresizingMask = [.width, .minYMargin]
         hud.material = .hudWindow
         hud.blendingMode = .withinWindow
         hud.state = .active
         hud.alphaValue = 0
-        let drag = DragView()
-        let play = hudButton("⏯", #selector(playTapped))
-        let opac = hudButton("◐", #selector(opacityTapped))
-        let close = hudButton("✕", #selector(closeTapped))
-        let stack = NSStackView(views: [drag, play, opac, close])
-        stack.frame = hud.bounds
-        stack.autoresizingMask = [.width, .height]
-        stack.spacing = 4
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
-        drag.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        hud.addSubview(stack)
+        // Tombol langsung di dalam DragView: area kosong HUD ikut bisa diseret.
+        let hudDrag = DragView(frame: hud.bounds)
+        hudDrag.autoresizingMask = [.width, .height]
+        for (i, (title, action)) in [("⏯", #selector(playTapped)), ("◐", #selector(opacityTapped)), ("✕", #selector(closeTapped))].enumerated() {
+            let b = HudButton(title: title, target: self, action: action)
+            b.isBordered = false
+            b.frame = NSRect(x: 6 + CGFloat(i) * 28, y: 2, width: 24, height: 24)
+            hudDrag.addSubview(b)
+        }
+        hud.addSubview(hudDrag)
         root.addSubview(hud)
         contentView = root
-    }
-
-    private func hudButton(_ title: String, _ action: Selector) -> NSButton {
-        let b = HudButton(title: title, target: self, action: action)
-        b.isBordered = false
-        b.setContentHuggingPriority(.required, for: .horizontal)
-        return b
     }
 
     private func hover(_ inside: Bool) {
@@ -120,7 +117,7 @@ final class PlayerPanel: NSPanel {
         ucc.removeAllUserScripts()
         ucc.addUserScript(WKUserScript(source: isolatorScript(startTime: req.time),
                                        injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        webView.load(URLRequest(url: req.url))
+        webView.load(URLRequest(url: playbackURL(req.url, time: req.time)))
         if !isVisible {
             let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
             setFrame(initialFrame(visible: visible, aspect: req.aspect), display: true)
@@ -135,7 +132,7 @@ final class PlayerPanel: NSPanel {
     }
 
     func currentTime(_ done: @escaping (Double) -> Void) {
-        let js = "(() => { const v = window.__floatixVideo; return v && v.readyState >= 1 && v.currentTime > 0 ? v.currentTime : -1; })()"
+        let js = "(() => { const v = window.__floatixVideo; if (document.querySelector('.ad-showing')) return -1; return v && v.readyState >= 1 && v.currentTime > 0 ? v.currentTime : -1; })()"
         webView.evaluateJavaScript(js) { [weak self] r, _ in
             // -1 or non-Double: video never started, keep the resume point
             if let t = r as? Double, t >= 0 { done(t) } else { done(self?.startTime ?? 0) }

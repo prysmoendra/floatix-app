@@ -11,7 +11,9 @@ function getPort() {
   p.onMessage.addListener(onHostMessage);
   p.onDisconnect.addListener(() => {
     const err = chrome.runtime.lastError;
+    const tabId = sourceTabId;
     port = null; panelOpen = false; sourceTabId = null;
+    resumeTab(tabId, null); // host mati: jangan biarkan video di tab tertahan
     if (err) { console.error('Floatix host:', err.message); badge('ERR'); }
   });
   port = p;
@@ -22,17 +24,27 @@ async function onHostMessage(msg) {
   if (msg.type === 'ready') badge('');
   else if (msg.type === 'error') console.error('Floatix host error:', msg.message);
   else if (msg.type === 'closed') {
-    if (sourceTabId !== null) {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: sourceTabId },
-          func: (t) => { const v = window.__floatixSource; if (v) { v.currentTime = t; v.play(); } },
-          args: [msg.time],
-        });
-      } catch (e) { console.warn('Floatix resume gagal:', e.message); } // tab mungkin sudah ditutup
-    }
+    const tabId = sourceTabId;
     panelOpen = false; sourceTabId = null;
+    await resumeTab(tabId, msg.time);
   }
+}
+
+// Lepas tahanan pause di tab sumber; lanjutkan dari detik t bila ada.
+async function resumeTab(tabId, t) {
+  if (tabId === null) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (t) => {
+        window.__floatixHold = false;
+        const v = window.__floatixSource; if (!v) return;
+        if (Number.isFinite(t)) v.currentTime = t;
+        v.play().catch(() => {});
+      },
+      args: [Number.isFinite(t) ? t : null],
+    });
+  } catch (e) { console.warn('Floatix resume gagal:', e.message); } // tab mungkin sudah ditutup
 }
 
 function flash() {
