@@ -6,6 +6,13 @@ private let safariUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWeb
 
 private final class DragView: NSView {
     override var mouseDownCanMoveWindow: Bool { true }
+    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+// Borderless panel is nonactivating: buttons must act on the first click.
+private final class HudButton: NSButton {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 // Container owns the hover tracking so the HUD shows over the web content.
@@ -46,6 +53,7 @@ final class PlayerPanel: NSPanel {
         level = .floating
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
+        animationBehavior = .none  // no fade-out lag on orderOut
         backgroundColor = .black
         buildUI()
     }
@@ -79,7 +87,7 @@ final class PlayerPanel: NSPanel {
     }
 
     private func hudButton(_ title: String, _ action: Selector) -> NSButton {
-        let b = NSButton(title: title, target: self, action: action)
+        let b = HudButton(title: title, target: self, action: action)
         b.isBordered = false
         b.setContentHuggingPriority(.required, for: .horizontal)
         return b
@@ -140,6 +148,7 @@ final class PlayerPanel: NSPanel {
         if !isVisible { onClose?(lastTime); return }
         closing = true
         hideTimer?.invalidate(); hud.alphaValue = 0
+        orderOut(nil)  // hide now; the JS read below may be slow or hang
         let gen = generation
         currentTime { [weak self] t in
             guard let self else { return }
@@ -147,7 +156,6 @@ final class PlayerPanel: NSPanel {
             guard gen == self.generation else { return }  // a newer show() owns the panel now
             self.lastTime = t
             self.closing = false
-            self.orderOut(nil)
             self.webView.load(URLRequest(url: URL(string: "about:blank")!))
         }
     }
