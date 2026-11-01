@@ -12,6 +12,7 @@ private final class DragView: NSView {
 private final class HoverView: NSView {
     var onHover: ((Bool) -> Void)?
     override func updateTrackingAreas() {
+        super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(rect: .zero,
             options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
@@ -27,6 +28,10 @@ final class PlayerPanel: NSPanel {
     private var hideTimer: Timer?
     private let opacities: [CGFloat] = [1.0, 0.6, 0.3]
     private var opacityIndex = 0
+    private var startTime = 0.0
+    private var lastTime = 0.0
+    private var generation = 0
+    private var closing = false
 
     init() {
         let cfg = WKWebViewConfiguration()
@@ -101,6 +106,8 @@ final class PlayerPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 
     func show(_ req: OpenRequest) {
+        generation += 1; closing = false
+        startTime = req.time; lastTime = req.time
         let ucc = webView.configuration.userContentController
         ucc.removeAllUserScripts()
         ucc.addUserScript(WKUserScript(source: isolatorScript(startTime: req.time),
@@ -120,20 +127,34 @@ final class PlayerPanel: NSPanel {
     }
 
     func currentTime(_ done: @escaping (Double) -> Void) {
-        webView.evaluateJavaScript("window.__floatixVideo ? window.__floatixVideo.currentTime : 0") { r, _ in
-            done((r as? Double) ?? 0)
+        let js = "(() => { const v = window.__floatixVideo; return v && v.readyState >= 1 && v.currentTime > 0 ? v.currentTime : -1; })()"
+        webView.evaluateJavaScript(js) { [weak self] r, _ in
+            // -1 or non-Double: video never started, keep the resume point
+            if let t = r as? Double, t >= 0 { done(t) } else { done(self?.startTime ?? 0) }
         }
     }
 
-    /// Reads time, reports via onClose, hides, and blanks the page to stop audio.
+    /// Reads time, reports via onClose once, hides, and blanks the page to stop audio.
     func requestClose() {
+        if closing { return }
+        if !isVisible { onClose?(lastTime); return }
+        closing = true
+        hideTimer?.invalidate(); hud.alphaValue = 0
+        let gen = generation
         currentTime { [weak self] t in
             guard let self else { return }
             self.onClose?(t)
+            guard gen == self.generation else { return }  // a newer show() owns the panel now
+            self.lastTime = t
+            self.closing = false
             self.orderOut(nil)
             self.webView.load(URLRequest(url: URL(string: "about:blank")!))
         }
     }
+
+    override func close() { if isVisible { requestClose() } else { super.close() } }
+    override func performClose(_ sender: Any?) { requestClose() }
+    override func cancelOperation(_ sender: Any?) { requestClose() }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { requestClose() } else { super.keyDown(with: event) }
