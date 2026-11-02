@@ -65,6 +65,12 @@ check(playbackURL(URL(string: "https://vimeo.com/1?x=1")!, time: 9) == URL(strin
 check(isolatorScript(startTime: 1).contains("ad-showing"), "isolator: tunda seek selama iklan youtube")
 check(isolatorScript(startTime: 1).contains("['overflow', 'visible']"), "isolator: induk video tidak memotong video fixed")
 
+check(adBlockScript.contains("adPlacements") && adBlockScript.contains("JSON.parse") && adBlockScript.contains("ytInitialPlayerResponse"), "adblock: scriptlet buang jadwal iklan")
+let rules = (try? JSONSerialization.jsonObject(with: Data(adBlockRules.utf8))) as? [[String: Any]]
+check(rules != nil && rules!.count >= 3, "adblock: aturan blokir JSON valid")
+check(adBlockRules.contains("doubleclick") && adBlockRules.contains("pagead"), "adblock: blokir server iklan")
+check(volumeScript(42).contains("setVolume(42)") && volumeScript(-5).contains("setVolume(0)") && volumeScript(500).contains("setVolume(100)"), "volume: di-clamp 0..100")
+
 // --- checks above this line ---
 if failures > 0 { print("\(failures) CHECK GAGAL"); exit(1) }
 print("ALL CHECKS PASSED")

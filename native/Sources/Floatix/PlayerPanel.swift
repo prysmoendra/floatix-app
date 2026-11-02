@@ -15,6 +15,10 @@ private final class HudButton: NSButton {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+private final class HudSlider: NSSlider {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 // Container owns the hover tracking so the HUD shows over the web content.
 private final class HoverView: NSView {
     var onHover: ((Bool) -> Void)?
@@ -39,6 +43,15 @@ final class PlayerPanel: NSPanel {
     private var lastTime = 0.0
     private var generation = 0
     private var closing = false
+    private var rulesReady = false
+    private var pending: OpenRequest?  // open yang tiba sebelum daftar blokir selesai dikompilasi
+    private let muteButton = HudButton(title: "🔊", target: nil, action: nil)
+    private let volumeSlider = HudSlider(value: 100, minValue: 0, maxValue: 100, target: nil, action: nil)
+    private var muted = false
+    private var volume: Int {
+        get { UserDefaults.standard.object(forKey: "volume") as? Int ?? 100 }
+        set { UserDefaults.standard.set(newValue, forKey: "volume") }
+    }
 
     init() {
         let cfg = WKWebViewConfiguration()
@@ -56,6 +69,13 @@ final class PlayerPanel: NSPanel {
         animationBehavior = .none  // no fade-out lag on orderOut
         backgroundColor = .black
         buildUI()
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "floatix-ads", encodedContentRuleList: adBlockRules) { [weak self] list, err in
+            guard let self else { return }
+            if let list { self.webView.configuration.userContentController.add(list) }
+            else { FileHandle.standardError.write("Floatix: daftar blokir gagal dikompilasi: \(String(describing: err))\n".data(using: .utf8)!) }
+            self.rulesReady = true
+            if let req = self.pending { self.pending = nil; self.show(req) }
+        }
     }
 
     private func buildUI() {
@@ -85,6 +105,15 @@ final class PlayerPanel: NSPanel {
             b.frame = NSRect(x: 6 + CGFloat(i) * 28, y: 2, width: 24, height: 24)
             hudDrag.addSubview(b)
         }
+        muteButton.target = self; muteButton.action = #selector(muteTapped)
+        muteButton.isBordered = false
+        muteButton.frame = NSRect(x: 90, y: 2, width: 24, height: 24)
+        volumeSlider.target = self; volumeSlider.action = #selector(volumeChanged)
+        volumeSlider.controlSize = .small
+        volumeSlider.integerValue = volume
+        volumeSlider.frame = NSRect(x: 116, y: 4, width: 80, height: 20)
+        hudDrag.addSubview(muteButton)
+        hudDrag.addSubview(volumeSlider)
         hud.addSubview(hudDrag)
         root.addSubview(hud)
         contentView = root
@@ -107,15 +136,29 @@ final class PlayerPanel: NSPanel {
         alphaValue = opacities[opacityIndex]
     }
     @objc private func closeTapped() { requestClose() }
+    @objc private func muteTapped() { muted.toggle(); applyVolume() }
+    @objc private func volumeChanged() { volume = volumeSlider.integerValue; muted = volume == 0; applyVolume() }
+
+    private func applyVolume() {
+        let v = muted ? 0 : volume
+        muteButton.title = v == 0 ? "🔇" : "🔊"
+        webView.evaluateJavaScript(volumeScript(v))
+    }
 
     override var canBecomeKey: Bool { true }
 
     func show(_ req: OpenRequest) {
+        guard rulesReady else { pending = req; return }
         generation += 1; closing = false
         startTime = req.time; lastTime = req.time
         let ucc = webView.configuration.userContentController
         ucc.removeAllUserScripts()
+        ucc.addUserScript(WKUserScript(source: adBlockScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         ucc.addUserScript(WKUserScript(source: isolatorScript(startTime: req.time),
+                                       injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        // Player YouTube memulihkan volumenya sendiri saat siap; terapkan ulang selama 15 detik pertama.
+        let v = muted ? 0 : volume
+        ucc.addUserScript(WKUserScript(source: "(() => { let n = 0; const t = setInterval(() => { \(volumeScript(v)); if (++n >= 30) clearInterval(t); }, 500); })();",
                                        injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         webView.load(URLRequest(url: playbackURL(req.url, time: req.time)))
         if !isVisible {
